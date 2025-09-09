@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
 import './App.css';
@@ -8,24 +8,30 @@ import Feedback from './assets/Feedback.svg';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 
-// ---- Helper: Generate and store key pair ----
+/* ----------------- Helpers ----------------- */
+
+// Generate + store ephemeral keypair for Phantom deep link
 function generateAndStoreKeyPair() {
   const kp = nacl.box.keyPair();
   sessionStorage.setItem('phantom_dapp_secret_key', bs58.encode(kp.secretKey));
   return kp;
 }
 
-// ---- Helper: Decrypt Phantom callback payload ----
+// Decrypt Phantom payload on callback
 function decryptPayload(data, nonce, phantomPublicKey) {
   try {
-    const secretKey = bs58.decode(sessionStorage.getItem('phantom_dapp_secret_key'));
-    const sharedSecret = nacl.box.before(bs58.decode(phantomPublicKey), secretKey);
+    const secretKey = sessionStorage.getItem('phantom_dapp_secret_key');
+    if (!secretKey) throw new Error('Missing dapp secret key');
+    const sharedSecret = nacl.box.before(
+      bs58.decode(phantomPublicKey),
+      bs58.decode(secretKey)
+    );
     const decrypted = nacl.box.open.after(
       bs58.decode(data),
       bs58.decode(nonce),
       sharedSecret
     );
-    if (!decrypted) throw new Error('Failed to decrypt Phantom payload');
+    if (!decrypted) throw new Error('Decryption failed');
     return JSON.parse(new TextDecoder().decode(decrypted));
   } catch (e) {
     console.error('Decryption error:', e);
@@ -33,7 +39,8 @@ function decryptPayload(data, nonce, phantomPublicKey) {
   }
 }
 
-// ---- Callback screen ----
+/* ----------------- Callback Route ----------------- */
+
 function Callback() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,9 +52,10 @@ function Callback() {
     const data = params.get('data');
 
     if (phantomPubKey && nonce && data) {
-      const decryptedData = decryptPayload(data, nonce, phantomPubKey);
-      if (decryptedData?.public_key) {
-        navigate('/', { state: { walletAddress: decryptedData.public_key } });
+      const decrypted = decryptPayload(data, nonce, phantomPubKey);
+      if (decrypted?.public_key) {
+        // Pass wallet address back to home
+        navigate('/', { state: { walletAddress: decrypted.public_key } });
       } else {
         alert('Failed to read wallet address from Phantom.');
         navigate('/');
@@ -61,11 +69,11 @@ function Callback() {
   return <div>Connecting your wallet...</div>;
 }
 
-// ---- Main App ----
+/* ----------------- Main App ----------------- */
+
 function App() {
   const location = useLocation();
-  const state = location.state || {};
-  const connectedWallet = state.walletAddress || null;
+  const connectedWallet = location.state?.walletAddress || null;
 
   const [walletAddress, setWalletAddress] = useState(connectedWallet);
   const [name, setName] = useState('');
@@ -73,24 +81,14 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
 
-  // Grab wallet from query param (desktop quick connect)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const addr = params.get('walletAddress');
-    if (addr) {
-      setWalletAddress(addr);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, []);
-
-  // For when callback returned a wallet
+  // Sync wallet from state (from callback navigation)
   useEffect(() => {
     if (connectedWallet) {
       setWalletAddress(connectedWallet);
     }
   }, [connectedWallet]);
 
-  // ---- Connect Wallet (handles desktop + mobile) ----
+  /* --------- Connect Wallet (Desktop + Mobile) --------- */
   const connectWallet = () => {
     const isPhantomInjected = window.solana && window.solana.isPhantom;
 
@@ -106,29 +104,24 @@ function App() {
           console.error('Phantom extension connection failed:', err);
           alert('Failed to connect Phantom extension.');
         });
-      return;
+    } else {
+      // Mobile deep link
+      const appUrl = encodeURIComponent(window.location.origin);
+      const redirectLink = encodeURIComponent(`${window.location.origin}/callback`);
+      const keyPair = generateAndStoreKeyPair();
+      const dappPublicKey = bs58.encode(keyPair.publicKey);
+
+      const url =
+        `https://phantom.app/ul/v1/connect?app_url=${appUrl}` +
+        `&redirect_link=${redirectLink}` +
+        `&dapp_encryption_public_key=${encodeURIComponent(dappPublicKey)}` +
+        `&cluster=mainnet-beta`;
+
+      window.location.href = url;
     }
-
-    // Mobile: deep link
-    const appUrl = encodeURIComponent(window.location.origin);
-    const redirectLink = encodeURIComponent(`${window.location.origin}/callback`);
-    const keyPair = generateAndStoreKeyPair();
-    const dappPublicKey = bs58.encode(keyPair.publicKey);
-
-    const url =
-      `https://phantom.app/ul/v1/connect?app_url=${appUrl}` +
-      `&redirect_link=${redirectLink}` +
-      `&dapp_encryption_public_key=${encodeURIComponent(dappPublicKey)}` +
-      `&cluster=mainnet-beta`;
-
-    window.location.href = url;
   };
 
-  const formatWalletAddress = (addr) => {
-    if (!addr) return '';
-    return `${addr.slice(0, 4)}…${addr.slice(-5)}`;
-  };
-
+  /* --------- Whitelist Submission --------- */
   const submitToWhitelist = async () => {
     if (!walletAddress || !xUsername.trim() || !name.trim()) {
       alert('Please connect wallet and fill both fields.');
@@ -151,6 +144,11 @@ function App() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const formatWalletAddress = (addr) => {
+    if (!addr) return '';
+    return `${addr.slice(0, 4)}…${addr.slice(-5)}`;
   };
 
   const isButtonDisabled = isSubmitting || !name.trim() || !xUsername.trim();
