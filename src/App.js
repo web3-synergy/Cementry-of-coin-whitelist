@@ -1,39 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
 import './App.css';
 import logo from './assets/logo.svg';
 import phantomLogo from './assets/phantom.svg';
 import Feedback from './assets/Feedback.svg';
-import nacl from 'tweetnacl';
 import bs58 from 'bs58';
+import nacl from 'tweetnacl';
 
-// --- Helper: Generate a key pair (for Phantom payload encryption) ---
-function generateAndStoreKeyPair() {
+// ----- Helper: generate or retrieve stable keypair -----
+function getOrCreateKeyPair() {
+  const existingSecret = localStorage.getItem('phantom_secret_key');
+  if (existingSecret) {
+    const secretKey = bs58.decode(existingSecret);
+    return nacl.box.keyPair.fromSecretKey(secretKey);
+  }
   const kp = nacl.box.keyPair();
-  sessionStorage.setItem('phantom_secret_key', bs58.encode(kp.secretKey));
+  localStorage.setItem('phantom_secret_key', bs58.encode(kp.secretKey));
   return kp;
 }
 
-// --- Helper: Decrypt Phantom payload ---
-function decryptPayload(data, nonce, phantomPubKey) {
+// ----- Helper: decrypt Phantom payload -----
+function decryptPayload(data, nonce, phantomPublicKey) {
   try {
-    const secretKey = bs58.decode(sessionStorage.getItem('phantom_secret_key'));
-    const sharedSecret = nacl.box.before(bs58.decode(phantomPubKey), secretKey);
+    const secretKey = bs58.decode(localStorage.getItem('phantom_secret_key'));
+    const sharedSecret = nacl.box.before(bs58.decode(phantomPublicKey), secretKey);
     const decrypted = nacl.box.open.after(
       bs58.decode(data),
       bs58.decode(nonce),
       sharedSecret
     );
-    if (!decrypted) throw new Error('Failed to decrypt Phantom payload');
+    if (!decrypted) throw new Error('Failed to decrypt');
     return JSON.parse(new TextDecoder().decode(decrypted));
   } catch (e) {
-    console.error('Decryption error:', e);
+    console.error('❌ Decryption error:', e);
     return null;
   }
 }
 
-// --- Callback Page ---
+// ----- Callback screen -----
 function Callback() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,11 +50,15 @@ function Callback() {
     const data = params.get('data');
 
     if (phantomPubKey && nonce && data) {
-      const decrypted = decryptPayload(data, nonce, phantomPubKey);
-      if (decrypted?.public_key) {
-        navigate('/', { state: { walletAddress: decrypted.public_key } });
+      console.log('🔹 Phantom callback params:', { phantomPubKey, nonce, data });
+
+      const decryptedData = decryptPayload(data, nonce, phantomPubKey);
+      console.log('🔹 Decrypted payload:', decryptedData);
+
+      if (decryptedData?.public_key) {
+        navigate('/', { state: { walletAddress: decryptedData.public_key } });
       } else {
-        alert('Failed to read wallet address.');
+        alert('Failed to read wallet address. Check console logs.');
         navigate('/');
       }
     } else {
@@ -58,53 +67,66 @@ function Callback() {
     }
   }, [location.search, navigate]);
 
-  return <div>Connecting wallet...</div>;
+  return <div>Connecting your wallet...</div>;
 }
 
-// --- Main App ---
+// ----- Main App -----
 function App() {
   const location = useLocation();
   const state = location.state || {};
-  const [walletAddress, setWalletAddress] = useState(state.walletAddress || null);
+  const connectedWallet = state.walletAddress || null;
+
+  const [walletAddress, setWalletAddress] = useState(connectedWallet);
   const [name, setName] = useState('');
   const [xUsername, setXUsername] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
 
-  // --- Connect Wallet ---
-  const connectWallet = async () => {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const phantomInjected = window.solana && window.solana.isPhantom;
-
-    if (!isMobile && phantomInjected) {
-      // Desktop Phantom extension
-      try {
-        const res = await window.solana.connect();
-        setWalletAddress(res.publicKey.toString());
-      } catch (err) {
-        console.error(err);
-        alert('Failed to connect Phantom extension.');
-      }
-    } else {
-      // Mobile → use Phantom Universal Link
-      const appUrl = encodeURIComponent(window.location.origin);
-      const redirectLink = encodeURIComponent(`${window.location.origin}/callback`);
-      const kp = generateAndStoreKeyPair();
-      const dappPubKey = bs58.encode(kp.publicKey);
-
-      const link =
-        `https://phantom.app/ul/v1/connect?` +
-        `app_url=${appUrl}` +
-        `&dapp_encryption_public_key=${encodeURIComponent(dappPubKey)}` +
-        `&redirect_link=${redirectLink}` +
-        `&cluster=mainnet-beta`;
-
-      window.location.href = link;
+  useEffect(() => {
+    if (connectedWallet) {
+      setWalletAddress(connectedWallet);
     }
+  }, [connectedWallet]);
+
+  // ---- Connect Wallet (desktop + mobile) ----
+  const connectWallet = () => {
+    const isPhantomInjected = window.solana && window.solana.isPhantom;
+
+    if (isPhantomInjected) {
+      // Desktop extension
+      window.solana.connect()
+        .then((res) => {
+          const pubKey = res.publicKey.toString();
+          console.log('✅ Connected via Phantom extension:', pubKey);
+          setWalletAddress(pubKey);
+        })
+        .catch((err) => {
+          console.error('Phantom extension connection failed:', err);
+          alert('Failed to connect Phantom extension.');
+        });
+      return;
+    }
+
+    // Mobile deep link
+    const appUrl = encodeURIComponent(window.location.origin);
+    const redirectLink = encodeURIComponent(`${window.location.origin}/callback`);
+    const keyPair = getOrCreateKeyPair();
+    const dappPublicKey = bs58.encode(keyPair.publicKey);
+
+    const url =
+      `https://phantom.app/ul/v1/connect?app_url=${appUrl}` +
+      `&redirect_link=${redirectLink}` +
+      `&dapp_encryption_public_key=${encodeURIComponent(dappPublicKey)}` +
+      `&cluster=mainnet-beta`;
+
+    console.log('🔗 Opening Phantom deep link:', url);
+    window.location.href = url;
   };
 
-  const formatWalletAddress = (addr) =>
-    addr ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : '';
+  const formatWalletAddress = (addr) => {
+    if (!addr) return '';
+    return `${addr.slice(0, 4)}…${addr.slice(-5)}`;
+  };
 
   const submitToWhitelist = async () => {
     if (!walletAddress || !xUsername.trim() || !name.trim()) {
@@ -122,8 +144,8 @@ function App() {
       setWhitelistSuccess(true);
       setName('');
       setXUsername('');
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
       alert('Submission failed.');
     } finally {
       setIsSubmitting(false);
@@ -148,9 +170,7 @@ function App() {
                   <div className="wallet-info">
                     <div className="wallet-address-group">
                       <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
-                      <span className="wallet-address">
-                        {formatWalletAddress(walletAddress)}
-                      </span>
+                      <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
                     </div>
                     <span className="connect">Connected</span>
                   </div>
@@ -172,9 +192,7 @@ function App() {
                       <div className="wallet-info">
                         <div className="wallet-address-group">
                           <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
-                          <span className="wallet-address">
-                            {formatWalletAddress(walletAddress)}
-                          </span>
+                          <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
                         </div>
                         <span className="connect">Connected</span>
                       </div>
