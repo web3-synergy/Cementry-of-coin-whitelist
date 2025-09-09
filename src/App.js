@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
 import './App.css';
@@ -13,23 +13,35 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
 
-  const connectWallet = async () => {
-    try {
-      const provider = window?.solana;
+  // 🔹 Auto-connect if Phantom is injected (desktop or Phantom browser)
+  useEffect(() => {
+    const provider = window?.solana;
+    if (provider?.isPhantom) {
+      provider.connect({ onlyIfTrusted: true })
+        .then((res) => {
+          setWalletAddress(res.publicKey.toString());
+        })
+        .catch(() => {
+          // Not connected yet — user still needs to click "Connect"
+        });
+    }
+  }, []);
 
-      if (provider?.isPhantom) {
-        // Connect using Phantom extension or in-app browser
+  const connectWallet = async () => {
+    const provider = window?.solana;
+
+    if (provider?.isPhantom) {
+      try {
         const res = await provider.connect();
         setWalletAddress(res.publicKey.toString());
-      } else {
-        // Not in Phantom: try deep link (mobile)
-        const dappUrl = encodeURIComponent(window.location.href);
-        const phantomDeepLink = `https://phantom.app/ul/browse/${dappUrl}`;
-        window.location.href = phantomDeepLink;
+      } catch (err) {
+        console.error('Connection failed:', err);
+        alert('Failed to connect Phantom.');
       }
-    } catch (err) {
-      console.error('Connection failed:', err);
-      alert('Failed to connect to Phantom.');
+    } else {
+      // 🔹 If Phantom not injected, open in Phantom browser
+      const url = `https://phantom.app/ul/browse/${encodeURIComponent(window.location.href)}`;
+      window.location.href = url;
     }
   };
 
