@@ -3,8 +3,8 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { Routes, Route } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
 import './App.css';
-import logo from './assets/logo.svg'; // Whitelist logo
-import phantom from './assets/phantom.svg'; // Phantom logo (adjust path or use URL)
+import logo from './assets/logo.svg';
+import phantom from './assets/phantom.svg';
 import Feedback from './assets/Feedback.svg';
 
 function App() {
@@ -14,7 +14,7 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState(null);
-  const [whitelistSuccess, setWhitelistSuccess] = useState(false); // <-- NEW
+  const [whitelistSuccess, setWhitelistSuccess] = useState(false);
 
   useEffect(() => {
     if (publicKey || window.solana?.publicKey) {
@@ -23,49 +23,46 @@ function App() {
       setWalletAddress(address);
       console.log('Wallet address set:', address.toString());
     }
-    console.log('Wallet state:', {
-      connected,
-      publicKey: publicKey?.toString(),
-      windowSolanaPublicKey: window.solana?.publicKey?.toString(),
-      isWalletConnected,
-    });
   }, [connected, publicKey]);
 
+  // Clean connectWallet function
   const connectWallet = async () => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      if (!window.solana || !window.solana.isPhantom) {
-        throw new Error('Phantom wallet not detected. Please install or unlock Phantom.');
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const hasPhantom = window.solana && window.solana.isPhantom;
+
+      if (!hasPhantom) {
+        if (isMobile) {
+          alert(
+            'Phantom wallet not detected. Please open this site from inside the Phantom wallet browser.'
+          );
+        } else {
+          alert('Phantom wallet not detected. Please install Phantom from https://phantom.app');
+        }
+        return;
       }
-      if (!connected && !publicKey) {
+
+      // Desktop Phantom or Phantom in-app browser
+      if (!connected) {
         try {
           await connect();
         } catch (adapterError) {
-          console.warn('Adapter connection failed, trying direct connection:', adapterError);
+          console.warn('Adapter connect failed, trying window.solana.connect():', adapterError);
           await window.solana.connect();
         }
       }
-      let attempts = 0;
-      const maxAttempts = 1;
-      while (!publicKey && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        attempts++;
-        console.log(`Attempt ${attempts}: publicKey =`, publicKey?.toString());
+
+      const key = publicKey || window.solana.publicKey;
+      if (!key) {
+        throw new Error('No public key after connection. Please unlock Phantom and approve.');
       }
-      if (!publicKey && window.solana?.publicKey) {
-        console.log('Using window.solana.publicKey:', window.solana.publicKey.toString());
-        setIsWalletConnected(true);
-        setWalletAddress(window.solana.publicKey);
-        return;
-      }
-      if (!publicKey) {
-        throw new Error('No public key available after connection. Please ensure Phantom is unlocked and approved.');
-      }
+
       setIsWalletConnected(true);
-      setWalletAddress(publicKey);
-    } catch (error) {
-      console.error('Wallet connection failed:', error.message, error);
-      alert(`Failed to connect wallet: ${error.message}`);
+      setWalletAddress(key);
+      console.log('Connected wallet address:', key.toString());
+    } catch (err) {
+      console.error('Wallet connection failed:', err);
+      alert(`Failed to connect Phantom: ${err.message}`);
     }
   };
 
@@ -96,10 +93,7 @@ function App() {
       const docRef = await addDoc(collection(db, 'whitelist_users'), payload);
       console.log('Document written with ID:', docRef.id);
 
-      // Show success screen
       setWhitelistSuccess(true);
-
-      // Reset form (optional)
       setName('');
       setXUsername('');
     } catch (error) {
@@ -120,29 +114,27 @@ function App() {
           <div className="container">
             <div className="card">
               <img src={logo} alt="Whitelist Logo" className="whitelist-logo" />
-              <p className='list'>Waiting List</p>
+              <p className="list">Waiting List</p>
 
               {whitelistSuccess ? (
-                // SUCCESS SCREEN
                 <div className="success-screen">
                   <div className="wallet-info">
-                    <div className='wallet-address-group'>
+                    <div className="wallet-address-group">
                       <img src={phantom} alt="Phantom Logo" className="phantom-logo" />
                       <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
                     </div>
                     <span className="connect">Connected</span>
                   </div>
-                  <img src={Feedback} alt='success' className='feedback' />
-                  <p>You enter Waiting list successfully</p>
+                  <img src={Feedback} alt="success" className="feedback" />
+                  <p>You entered the waiting list successfully</p>
                   <button
                     className="button button-green"
-                    onClick={() => window.location.href = '/'}
+                    onClick={() => (window.location.href = '/')}
                   >
-                    Back Website
+                    Back to Website
                   </button>
                 </div>
               ) : (
-                // ORIGINAL FORM
                 <>
                   {!isWalletConnected ? (
                     <button className="button-purple" onClick={connectWallet}>
@@ -152,7 +144,7 @@ function App() {
                   ) : (
                     <div>
                       <div className="wallet-info">
-                        <div className='wallet-address-group'>
+                        <div className="wallet-address-group">
                           <img src={phantom} alt="Phantom Logo" className="phantom-logo" />
                           <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
                         </div>
