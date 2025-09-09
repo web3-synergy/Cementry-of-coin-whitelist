@@ -1,59 +1,110 @@
-import React, { useEffect, useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
 import './App.css';
 import logo from './assets/logo.svg';
 import phantomLogo from './assets/phantom.svg';
 import Feedback from './assets/Feedback.svg';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 
+// --- Helper: Generate a key pair (for Phantom payload encryption) ---
+function generateAndStoreKeyPair() {
+  const kp = nacl.box.keyPair();
+  sessionStorage.setItem('phantom_secret_key', bs58.encode(kp.secretKey));
+  return kp;
+}
+
+// --- Helper: Decrypt Phantom payload ---
+function decryptPayload(data, nonce, phantomPubKey) {
+  try {
+    const secretKey = bs58.decode(sessionStorage.getItem('phantom_secret_key'));
+    const sharedSecret = nacl.box.before(bs58.decode(phantomPubKey), secretKey);
+    const decrypted = nacl.box.open.after(
+      bs58.decode(data),
+      bs58.decode(nonce),
+      sharedSecret
+    );
+    if (!decrypted) throw new Error('Failed to decrypt Phantom payload');
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch (e) {
+    console.error('Decryption error:', e);
+    return null;
+  }
+}
+
+// --- Callback Page ---
+function Callback() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const phantomPubKey = params.get('phantom_encryption_public_key');
+    const nonce = params.get('nonce');
+    const data = params.get('data');
+
+    if (phantomPubKey && nonce && data) {
+      const decrypted = decryptPayload(data, nonce, phantomPubKey);
+      if (decrypted?.public_key) {
+        navigate('/', { state: { walletAddress: decrypted.public_key } });
+      } else {
+        alert('Failed to read wallet address.');
+        navigate('/');
+      }
+    } else {
+      alert('Invalid Phantom callback.');
+      navigate('/');
+    }
+  }, [location.search, navigate]);
+
+  return <div>Connecting wallet...</div>;
+}
+
+// --- Main App ---
 function App() {
-  const [walletAddress, setWalletAddress] = useState(null);
+  const location = useLocation();
+  const state = location.state || {};
+  const [walletAddress, setWalletAddress] = useState(state.walletAddress || null);
   const [name, setName] = useState('');
   const [xUsername, setXUsername] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
 
-  // 🔹 Auto-connect if opened inside Phantom browser with ?autoconnect=true
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const auto = params.get('autoconnect');
-    const provider = window?.solana;
-
-    if (provider?.isPhantom && auto) {
-      provider.connect()
-        .then((res) => {
-          setWalletAddress(res.publicKey.toString());
-        })
-        .catch((err) => {
-          console.log('User did not approve connect:', err);
-        });
-    }
-  }, []);
-
-  // 🔹 Connect Wallet (handles desktop + mobile)
+  // --- Connect Wallet ---
   const connectWallet = async () => {
-    const provider = window?.solana;
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const phantomInjected = window.solana && window.solana.isPhantom;
 
-    if (provider?.isPhantom) {
-      // Desktop extension or already in Phantom browser
+    if (!isMobile && phantomInjected) {
+      // Desktop Phantom extension
       try {
-        const res = await provider.connect();
+        const res = await window.solana.connect();
         setWalletAddress(res.publicKey.toString());
       } catch (err) {
-        console.error('Connection failed:', err);
-        alert('Failed to connect to Phantom.');
+        console.error(err);
+        alert('Failed to connect Phantom extension.');
       }
     } else {
-      // Not in Phantom → redirect into Phantom browser
-      const url = `https://phantom.app/ul/browse/${encodeURIComponent(window.location.href)}?autoconnect=true`;
-      window.location.href = url;
+      // Mobile → use Phantom Universal Link
+      const appUrl = encodeURIComponent(window.location.origin);
+      const redirectLink = encodeURIComponent(`${window.location.origin}/callback`);
+      const kp = generateAndStoreKeyPair();
+      const dappPubKey = bs58.encode(kp.publicKey);
+
+      const link =
+        `https://phantom.app/ul/v1/connect?` +
+        `app_url=${appUrl}` +
+        `&dapp_encryption_public_key=${encodeURIComponent(dappPubKey)}` +
+        `&redirect_link=${redirectLink}` +
+        `&cluster=mainnet-beta`;
+
+      window.location.href = link;
     }
   };
 
-  const formatWalletAddress = (addr) => {
-    if (!addr) return '';
-    return `${addr.slice(0, 4)}…${addr.slice(-5)}`;
-  };
+  const formatWalletAddress = (addr) =>
+    addr ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : '';
 
   const submitToWhitelist = async () => {
     if (!walletAddress || !xUsername.trim() || !name.trim()) {
@@ -71,8 +122,8 @@ function App() {
       setWhitelistSuccess(true);
       setName('');
       setXUsername('');
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       alert('Submission failed.');
     } finally {
       setIsSubmitting(false);
@@ -83,6 +134,7 @@ function App() {
 
   return (
     <Routes>
+      <Route path="/callback" element={<Callback />} />
       <Route
         path="/"
         element={
@@ -96,16 +148,15 @@ function App() {
                   <div className="wallet-info">
                     <div className="wallet-address-group">
                       <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
-                      <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
+                      <span className="wallet-address">
+                        {formatWalletAddress(walletAddress)}
+                      </span>
                     </div>
                     <span className="connect">Connected</span>
                   </div>
                   <img src={Feedback} alt="Success" className="feedback" />
                   <p>You entered the waiting list successfully</p>
-                  <button
-                    className="button button-green"
-                    onClick={() => window.location.reload()}
-                  >
+                  <button className="button button-green" onClick={() => window.location.reload()}>
                     Back to Website
                   </button>
                 </div>
@@ -121,7 +172,9 @@ function App() {
                       <div className="wallet-info">
                         <div className="wallet-address-group">
                           <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
-                          <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
+                          <span className="wallet-address">
+                            {formatWalletAddress(walletAddress)}
+                          </span>
                         </div>
                         <span className="connect">Connected</span>
                       </div>
