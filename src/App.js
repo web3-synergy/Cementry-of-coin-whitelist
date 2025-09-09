@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
 import './App.css';
@@ -13,34 +13,39 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
 
-  // 🔹 Auto-connect if Phantom is injected (desktop or Phantom browser)
+  // 🔹 Auto-connect if opened inside Phantom browser with ?autoconnect=true
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const auto = params.get('autoconnect');
     const provider = window?.solana;
-    if (provider?.isPhantom) {
-      provider.connect({ onlyIfTrusted: true })
+
+    if (provider?.isPhantom && auto) {
+      provider.connect()
         .then((res) => {
           setWalletAddress(res.publicKey.toString());
         })
-        .catch(() => {
-          // Not connected yet — user still needs to click "Connect"
+        .catch((err) => {
+          console.log('User did not approve connect:', err);
         });
     }
   }, []);
 
+  // 🔹 Connect Wallet (handles desktop + mobile)
   const connectWallet = async () => {
     const provider = window?.solana;
 
     if (provider?.isPhantom) {
+      // Desktop extension or already in Phantom browser
       try {
         const res = await provider.connect();
         setWalletAddress(res.publicKey.toString());
       } catch (err) {
         console.error('Connection failed:', err);
-        alert('Failed to connect Phantom.');
+        alert('Failed to connect to Phantom.');
       }
     } else {
-      // 🔹 If Phantom not injected, open in Phantom browser
-      const url = `https://phantom.app/ul/browse/${encodeURIComponent(window.location.href)}`;
+      // Not in Phantom → redirect into Phantom browser
+      const url = `https://phantom.app/ul/browse/${encodeURIComponent(window.location.href)}?autoconnect=true`;
       window.location.href = url;
     }
   };
@@ -97,7 +102,10 @@ function App() {
                   </div>
                   <img src={Feedback} alt="Success" className="feedback" />
                   <p>You entered the waiting list successfully</p>
-                  <button className="button button-green" onClick={() => window.location.reload()}>
+                  <button
+                    className="button button-green"
+                    onClick={() => window.location.reload()}
+                  >
                     Back to Website
                   </button>
                 </div>
