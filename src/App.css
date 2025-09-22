@@ -1,7 +1,14 @@
+@font-face {
+  font-family: "MyFont";
+  src: url("/public/fonts/Ghost.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: #9151E4;
+  background: linear-gradient(to bottom, #000000, #33026B);
   color: #7B7878;
 }
 
@@ -12,20 +19,83 @@ body {
   align-items: center;
 }
 
+.circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;   /* allow stacking on small screens */
+  gap: 12px;
+  margin-bottom: 1rem;
+}
+
+.whitelist-logo {
+  max-width: 250px;
+  width: 100%;   /* responsive */
+  height: auto;  /* keep aspect ratio */
+  margin: 0 auto;
+}
+
+.title {
+  font-size: clamp(18px, 5vw, 28px); /* scales by screen size */
+  font-family: "MyFont", sans-serif;
+  color: white;
+  text-align: center;
+}
+
 .card {
-  background-color: white;
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
   max-width: 400px;
   width: 90%;
   text-align: center;
+  border: #00FF40 1px solid;
 }
-/* Optional: tweak on very small screens */
+
+/* Tablet */
+@media (max-width: 768px) {
+  .card {
+    max-width: 95%;
+    padding: 1.5rem;
+  }
+
+  .circle {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .whitelist-logo {
+    max-width: 200px;
+    margin-bottom: 10px;
+  }
+}
+
+/* Phone */
 @media (max-width: 480px) {
   .card {
-    padding: 1rem;             /* reduce padding on very small devices */
-    max-width: 95%;            /* use almost full width */
+    padding: 1rem;
+    max-width: 100%;
+  }
+
+  .whitelist-logo {
+    max-width: 160px;
+  }
+
+  .title {
+    font-size: 20px;
+  }
+
+  .button-purple {
+    font-size: 13px;
+    height: auto;
+    padding: 0.5rem; /* shrink button on small screens */
+  }
+
+  .button-purple .phantom-logo {
+    width: 24px;
+    height: 24px;
+    margin-right: 6px;
+    margin-bottom: 0;
   }
 }
 
@@ -39,14 +109,27 @@ h1 {
   font-size: 0.9rem;
 }
 
+.input-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.error-text {
+  color: rgb(225, 13, 194);
+  font-size: 0.85em;
+  margin-top: 4px;
+}
+
 .input {
   width: 95%;
   padding: 0.5rem;
   margin-bottom: 1rem;
-  background-color: #CFCFCF;
-  border: 1px solid #555;
+  background-color: black;
+  border: 1px solid #33026B;
   border-radius: 4px;
-  color: black;
+  color: white;
   font-size: 1rem;
 }
 
@@ -57,96 +140,90 @@ h1 {
 .button {
   width: 100%;
   padding: 0.75rem;
-  border: none;
+  border: 2px solid #33026B;
   border-radius: 4px;
   font-size: 1rem;
   cursor: pointer;
   transition: background-color 0.2s;
-  
 }
 
 .button-purple {
   background-color: black;
   color: white;
   width: 100%;
-  height: 40px;              /* fixed height */
-  display: flex;             /* enable flex layout */
-  align-items: center;       /* vertical center */
-  justify-content: center;   /* horizontal center */
-  border: none;              /* optional: remove default border */
-  cursor: pointer;           /* optional: pointer cursor on hover */
-  font-size: 14px;           /* adjust as needed */
-  font-weight: 500; 
-  border-radius: 8px;         /* optional: make text slightly bold */
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: #33026B 2px solid;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
 }
 
-/* Style the Phantom logo inside the button */
 .button-purple .phantom-logo {
-  width: 30px;         /* adjust size to fit nicely */
+  width: 30px;
   height: 30px;
-  margin-right: 8px; 
-  margin-bottom: 20px;   /* space between logo and text */
+  margin-right: 8px;
+  margin-bottom: 15px; /* fix bottom shift */
 }
-
 
 .button-green {
   background-color: #9151E4;
 }
-
 
 .button:disabled {
   background-color: #555;
   cursor: not-allowed;
   opacity: 0.5;
   color: black;
+  border: 2px solid #33026B;
 }
 
-.list{
+.list {
   color: #9151E4;
   margin-bottom: 1.5rem;
 }
+
 .wallet-info {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* spread out without hardcoded gap */
-  gap: 0.5rem;                   /* small consistent spacing */
+  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 1rem;
   font-size: 0.9rem;
   background-color: black;
   border-radius: 4px;
   height: 40px;
-  padding: 0 0.75rem;            /* add padding for breathing room */
-  flex-wrap: wrap;               /* allow wrapping if needed on very small screens */
-  box-sizing: border-box;        /* safe sizing */
+  padding: 0 0.75rem;
+  flex-wrap: wrap;
+  box-sizing: border-box;
 }
 
-/* Optional: tweak for very small screens */
 @media (max-width: 480px) {
   .wallet-info {
-    flex-direction: row;     /* stack items vertically if it gets too tight */
-    height: auto;               /* let height expand naturally */
+    flex-direction: row;
+    height: auto;
     padding: 0.5rem;
     gap: 0.25rem;
   }
 }
 
-
 .wallet-address {
-  color: white; /* Green for wallet address */
-  
+  color: white;
 }
 
 .connect {
-  color: #00FF40; /* Green for "connected" text */
+  color: #00FF40;
 }
 
 .phantom-logo {
   transform: translateY(10px);
 }
+
 .wallet-address-group {
   align-items: center;
   margin-bottom: 0.7rem;
-  
   gap: 0.25rem;
-  
 }

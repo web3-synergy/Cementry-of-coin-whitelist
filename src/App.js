@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
+import { query, where, getDocs } from "firebase/firestore"; // 👈 import directly from SDK
 import './App.css';
-import logo from './assets/logo.svg';
+
 import phantomLogo from './assets/phantom.svg';
 import Feedback from './assets/Feedback.svg';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
+import logo from './assets/logo.svg';
 
 // ----- Helper: generate or retrieve stable keypair -----
 function getOrCreateKeyPair() {
@@ -77,10 +79,10 @@ function App() {
   const connectedWallet = state.walletAddress || null;
 
   const [walletAddress, setWalletAddress] = useState(connectedWallet);
-  const [name, setName] = useState('');
   const [xUsername, setXUsername] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
+  const [usernameError, setUsernameError] = useState('');
 
   useEffect(() => {
     if (connectedWallet) {
@@ -88,26 +90,22 @@ function App() {
     }
   }, [connectedWallet]);
 
-  // ---- Connect Wallet (desktop + mobile) ----
+  // ---- Connect Wallet ----
   const connectWallet = () => {
     const isPhantomInjected = window.solana && window.solana.isPhantom;
 
     if (isPhantomInjected) {
-      // Desktop extension
       window.solana.connect()
         .then((res) => {
           const pubKey = res.publicKey.toString();
-          console.log('✅ Connected via Phantom extension:', pubKey);
           setWalletAddress(pubKey);
         })
-        .catch((err) => {
-          console.error('Phantom extension connection failed:', err);
+        .catch(() => {
           alert('Failed to connect Phantom extension.');
         });
       return;
     }
 
-    // Mobile deep link
     const appUrl = encodeURIComponent(window.location.origin);
     const redirectLink = encodeURIComponent(`${window.location.origin}/callback`);
     const keyPair = getOrCreateKeyPair();
@@ -119,7 +117,6 @@ function App() {
       `&dapp_encryption_public_key=${encodeURIComponent(dappPublicKey)}` +
       `&cluster=mainnet-beta`;
 
-    console.log('🔗 Opening Phantom deep link:', url);
     window.location.href = url;
   };
 
@@ -129,30 +126,45 @@ function App() {
   };
 
   const submitToWhitelist = async () => {
-    if (!walletAddress || !xUsername.trim() || !name.trim()) {
-      alert('Please connect wallet and fill both fields.');
+    if (!walletAddress || !xUsername.trim()) {
+      setUsernameError('Please enter a username');
       return;
     }
     setIsSubmitting(true);
+    setUsernameError('');
+
     try {
+      // 🔎 Check if username exists
+      const q = query(
+        collection(db, 'whitelist_users'),
+        where('xUsername', '==', xUsername.trim())
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        setUsernameError('Username Taken');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // ✅ Add to Firestore
       await addDoc(collection(db, 'whitelist_users'), {
         walletAddress,
         xUsername: xUsername.trim(),
-        name: name.trim(),
         timestamp: new Date().toISOString(),
       });
+
       setWhitelistSuccess(true);
-      setName('');
       setXUsername('');
     } catch (error) {
       console.error(error);
-      alert('Submission failed.');
+      setUsernameError('Submission failed.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const isButtonDisabled = isSubmitting || !name.trim() || !xUsername.trim();
+  const isButtonDisabled = isSubmitting || !xUsername.trim();
 
   return (
     <Routes>
@@ -162,8 +174,11 @@ function App() {
         element={
           <div className="container">
             <div className="card">
-              <img src={logo} alt="Logo" className="whitelist-logo" />
-              <p className="list">Waiting List</p>
+              <div className='circle'>
+                <img src={logo} alt="Logo" className="whitelist-logo" />
+                
+              </div>
+              <p className="list">Whitelist</p>
 
               {whitelistSuccess ? (
                 <div className="success-screen">
@@ -196,18 +211,19 @@ function App() {
                         </div>
                         <span className="connect">Connected</span>
                       </div>
-                      <input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Full Name"
-                        className="input"
-                      />
-                      <input
-                        value={xUsername}
-                        onChange={(e) => setXUsername(e.target.value)}
-                        placeholder="X @username"
-                        className="input"
-                      />
+
+                      <div className="input-group">
+  <input
+    value={xUsername}
+    onChange={(e) => setXUsername(e.target.value)}
+    placeholder="Spooky username"
+    className="input"
+  />
+  {usernameError && (
+    <p className="error-text">{usernameError}</p>
+  )}
+</div>
+
                       <button
                         onClick={submitToWhitelist}
                         disabled={isButtonDisabled}
