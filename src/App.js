@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
-import { query, where, getDocs } from "firebase/firestore"; // 👈 import directly from SDK
+import { query, where, getDocs } from "firebase/firestore";
 import './App.css';
 
 import phantomLogo from './assets/phantom.svg';
@@ -79,7 +79,7 @@ function App() {
   const connectedWallet = state.walletAddress || null;
 
   const [walletAddress, setWalletAddress] = useState(connectedWallet);
-  const [xUsername, setXUsername] = useState('');
+  const [spookyUsername, setSpookyUsername] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [whitelistSuccess, setWhitelistSuccess] = useState(false);
   const [usernameError, setUsernameError] = useState('');
@@ -120,13 +120,28 @@ function App() {
     window.location.href = url;
   };
 
+  // ---- Disconnect Wallet ----
+  const disconnectWallet = () => {
+    try {
+      if (window.solana && window.solana.isPhantom) {
+        window.solana.disconnect(); // works on desktop Phantom
+      }
+    } catch (e) {
+      console.warn("Phantom mobile has no disconnect method, clearing state only.");
+    }
+    localStorage.removeItem('phantom_secret_key');
+    setWalletAddress(null);
+    setSpookyUsername('');
+    setWhitelistSuccess(false);
+  };
+
   const formatWalletAddress = (addr) => {
     if (!addr) return '';
     return `${addr.slice(0, 4)}…${addr.slice(-5)}`;
   };
 
   const submitToWhitelist = async () => {
-    if (!walletAddress || !xUsername.trim()) {
+    if (!walletAddress || !spookyUsername.trim()) {
       setUsernameError('Please enter a username');
       return;
     }
@@ -134,28 +149,41 @@ function App() {
     setUsernameError('');
 
     try {
-      // 🔎 Check if username exists
-      const q = query(
+      // 🔎 Check if spookyUsername exists
+      const usernameQuery = query(
         collection(db, 'whitelist_users'),
-        where('xUsername', '==', xUsername.trim())
+        where('spookyUsername', '==', spookyUsername.trim())
       );
-      const querySnapshot = await getDocs(q);
+      const usernameSnapshot = await getDocs(usernameQuery);
 
-      if (!querySnapshot.empty) {
+      if (!usernameSnapshot.empty) {
         setUsernameError('Username Taken');
         setIsSubmitting(false);
         return;
       }
 
-      // ✅ Add to Firestore
+      // 🔎 Check if wallet address already exists
+      const walletQuery = query(
+        collection(db, 'whitelist_users'),
+        where('walletAddress', '==', walletAddress)
+      );
+      const walletSnapshot = await getDocs(walletQuery);
+
+      if (!walletSnapshot.empty) {
+        setUsernameError('This wallet is already whitelisted');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // ✅ Add to Firestore if unique
       await addDoc(collection(db, 'whitelist_users'), {
         walletAddress,
-        xUsername: xUsername.trim(),
+        spookyUsername: spookyUsername.trim(),
         timestamp: new Date().toISOString(),
       });
 
       setWhitelistSuccess(true);
-      setXUsername('');
+      setSpookyUsername('');
     } catch (error) {
       console.error(error);
       setUsernameError('Submission failed.');
@@ -164,7 +192,7 @@ function App() {
     }
   };
 
-  const isButtonDisabled = isSubmitting || !xUsername.trim();
+  const isButtonDisabled = isSubmitting || !spookyUsername.trim();
 
   return (
     <Routes>
@@ -176,19 +204,23 @@ function App() {
             <div className="card">
               <div className='circle'>
                 <img src={logo} alt="Logo" className="whitelist-logo" />
-                
               </div>
               <p className="list">Whitelist</p>
 
               {whitelistSuccess ? (
                 <div className="success-screen">
-                  <div className="wallet-info">
-                    <div className="wallet-address-group">
-                      <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
+                 <div className="wallet-info">
+                   <div className="wallet-address-group">
+                     <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
+                     
                       <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
-                    </div>
-                    <span className="connect">Connected</span>
-                  </div>
+                      <span className="status-dot"></span>
+                      
+                   </div>
+                   <button onClick={disconnectWallet} className="disconnect-btn">
+                     Disconnect
+                    </button>
+                 </div>
                   <img src={Feedback} alt="Success" className="feedback" />
                   <p>You entered the waiting list successfully</p>
                   <button className="button button-green" onClick={() => window.location.reload()}>
@@ -207,22 +239,27 @@ function App() {
                       <div className="wallet-info">
                         <div className="wallet-address-group">
                           <img src={phantomLogo} alt="Phantom" className="phantom-logo" />
+                          
                           <span className="wallet-address">{formatWalletAddress(walletAddress)}</span>
+                          <span className="status-dot"></span>
+                          
                         </div>
-                        <span className="connect">Connected</span>
+                        <button onClick={disconnectWallet} className="disconnect-btn">
+                          Disconnect
+                        </button>
                       </div>
 
                       <div className="input-group">
-  <input
-    value={xUsername}
-    onChange={(e) => setXUsername(e.target.value)}
-    placeholder="Spooky username"
-    className="input"
-  />
-  {usernameError && (
-    <p className="error-text">{usernameError}</p>
-  )}
-</div>
+                        <input
+                          value={spookyUsername}
+                          onChange={(e) => setSpookyUsername(e.target.value)}
+                          placeholder="Spooky username"
+                          className="input"
+                        />
+                        {usernameError && (
+                          <p className="error-text">{usernameError}</p>
+                        )}
+                      </div>
 
                       <button
                         onClick={submitToWhitelist}
