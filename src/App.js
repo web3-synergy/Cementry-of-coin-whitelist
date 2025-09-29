@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { db, addDoc, collection } from './firebase';
-import { query, where, getDocs } from "firebase/firestore";
+import { query, where, getDocs, serverTimestamp } from "firebase/firestore";
 import './App.css';
 
 import phantomLogo from './assets/phantom.svg';
