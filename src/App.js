@@ -179,7 +179,7 @@ function App() {
       await addDoc(collection(db, 'whitelist_users'), {
         walletAddress,
         spookyUsername: spookyUsername.trim(),
-        timestamp: new Date().toISOString(),
+        timestamp: serverTimestamp(),
       });
 
       setWhitelistSuccess(true);
